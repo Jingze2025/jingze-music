@@ -31,7 +31,11 @@ import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 KEY_PATH = os.path.expanduser("~/.baoyu-skills/.env")
-PROXIES = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
+PROXIES = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}  # OSS下载走代理
+# AGNES API 直连 (7890 代理对 apihub.agnes-ai.com 路由 SSL EOF, pitfall #30)
+# 系统代理 (scutil --proxy) 默认开启, Python requests 会自动读取 → 必须显式 NO_PROXY=apihub.agnes-ai.com 绕开
+os.environ['NO_PROXY'] = 'apihub.agnes-ai.com,*.agnes-ai.com'  # 只关 AGNES, OSS (googleapis) 继续走代理
+os.environ['no_proxy'] = os.environ['NO_PROXY']  # Python 两种 case 都读
 BASE_DIR = "/tmp/jingze_music"
 FONT_PATH = "/System/Library/Fonts/PingFang.ttc"
 
@@ -109,7 +113,7 @@ for name, spec in specs:
                     headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
                     json={"model": "agnes-image-2.1-flash",
                           "prompt": spec["prompt"], "size": "1536x1536", "n": 1},
-                    timeout=180, proxies=PROXIES,
+                    timeout=180, proxies={},  # ⚠️ pitfall #30: AGNES API 直连（7890代理SSL EOF）
                 )
                 print(f"  AGNES HTTP {r.status_code} in {time.time()-t0:.1f}s")
                 if r.status_code != 200:

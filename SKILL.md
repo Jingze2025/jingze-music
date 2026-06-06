@@ -1,9 +1,10 @@
 ---
 name: jingze-music-pipeline
 description: "Use when the user wants to make a music track inspired by current chart hits — pulls 网易云/QQ/酷狗 top charts (流行 + 国风双榜), picks a song to mirror, writes original Chinese indie lyrics (含国风戏腔/古风禅意风格), generates the audio via MiniMax Music-2.6-free, and produces a 1:1 cover (PNG/JPG/JPEG, ≥1440×1440, ≤10MB) via AGNES + PIL. End-to-end: 3 deliverables (cover, lyrics, MP3) + 飞书表 12 入库. Triggers: '做首歌', '按热度榜做歌', 'mirror 爆款', '1:1 对标', '国风对标', '京择式音乐', 'jingze music pipeline'."
-version: 1.3.0
+version: 1.4.0
 author: 京择 (Hermes Agent 协作)
 changelog:
+  - 1.4.0 (2026-06-06): **CRITICAL 复刻 ≠ 京择式对标**——v1.1.0-1.3.0 误导：把"京择式对标"当"复刻"导致国风 5 首二次创作。复刻 = 完整保留对标原作的意象/典故/场景/情绪/钩子，只换歌名+不重复的歌词。pitfall #29 固化。
   - 1.3.0 (2026-06-06): 国风首批 5 首对标验证 + pitfall #22-26 + guofeng-style-anatomy.md + 飞书附件上传正确路径固化（lark-cli --as bot +record-upload-attachment）
   - 1.2.0 (2026-06-06): pitfalls 22-23 3500 截断公式 + AGNES retry sleep 3s→5s + scene-differentiation-matrix.md 加 F 国风古韵
   - 1.1.0 (2026-06-06): 加 5 大趋势钩子矩阵 + AGNES SSL EOF 重试 + 动态字体规则 + 批量生脚本模板（5 首歌一次跑完验证）
@@ -310,6 +311,25 @@ send_message(
     - 走 `~/Documents/hermes-workspace/notes/` 写 .md 文件
     - 或 `send_message` 发飞书对话 + `MEDIA:` 附件
     - **绝不批量入库**到表 12（防污染 + 防占用行号）
+
+29. **🚨 CRITICAL：复刻 ≠ 京择式对标**（2026-06-06 用户强纠错）：用户原话"我们在做的就是总结分析他们这些歌曲火的原因，根据这些去复刻创作。如果你添加了某些调性，那怎么能叫复刻创作呢"。**这意味着 v1.1.0-1.3.0 的整个"5 大趋势钩子矩阵 + 京择式对标"思路是错的**。
+    - **复刻 (1:1 复刻) = 完整保留对标原作的意象/典故/场景/情绪/钩子/情绪曲线，只换歌名+不重复的具体歌词**
+    - 复刻的反义词是二次创作（用原作的流派做自己的内容，扭曲原作的场景/意象）
+    - **例子**：
+        - ❌ 京择式对标《半壶纱》= 把"古寺/一盏茶/莲"换成"工位/钉钉/咖啡"——**这是二次创作不是复刻**
+        - ✅ 复刻《半壶纱》= 完整保留"古寺/一盏茶/莲/出离心"意象，**只换歌名《一曲红尘客》+ 写不重复的禅意歌词**
+    - **场景差异化的正确用法**（v1.2.0 加的 scene matrix）：**仅用于"做新歌"**，**不是"复刻"**。复刻不能用差异化，复刻必须 1:1 还原。
+    - **5 大钩子公式的修正**：之前是"京择式对标"的武器，**现在回归为"复刻"分析工具**——分析对标原作用了哪个钩子，复刻时**沿用**而非**重写**。
+
+30. **AGNES API 必须直连，OSS 下载走代理**（2026-06-06 国风首批 5 张封面 5 轮 FATAL 实战验证）：
+    - **症状**：`apihub.agnes-ai.com` 通过 7890 代理访问持续 SSL EOF（5 轮 5 张全废）
+    - **诊断**：`curl --noproxy "*" https://apihub.agnes-ai.com` HTTP 401（TLS 通，鉴权问题）vs 走代理 timeout/SSL EOF
+    - **根因**：7890 代理对 `apihub.agnes-ai.com` 路由有问题（IP 路由/Cloudflare CDN），但 `storage.googleapis.com`（OSS 下载）走代理 OK
+    - **解法**：`os.environ['NO_PROXY'] = 'apihub.agnes-ai.com,*.agnes-ai.com'` + `os.environ['no_proxy'] = 同步`（Python 两种 case 都读）
+    - **注意**：`requests.post(..., proxies={})` 不够！**Python `requests` 仍会读系统代理**（macOS `scutil --proxy` 默认开启），必须用 NO_PROXY 环境变量
+    - **OSS 下载（`storage.googleapis.com`）继续走 `PROXIES = {..., 'https': 'http://127.0.0.1:7890'}`**——这条路由代理 OK
+    - **频率控制**：连续 5 轮全 FATAL 仍重试会触发风控，**最多 1 次 v5 测试**（AGNES HTTP 200 即算救场），OSS SSL EOF 用现有 3x retry + sleep 5s
+    - **完整修改 diff**：`batch_gen_covers.py` 顶部加 `os.environ['NO_PROXY'] = 'apihub.agnes-ai.com,*.agnes-ai.com'`
 
 ## Verification Checklist
 
