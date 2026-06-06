@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Batch generate songs from /tmp/jingze_music/<name>/{lyrics.txt, tags.txt} → song.mp3.
 
-Usage:
+Usage (MUST pass CLI arg, see pitfall #25 — does NOT read SONGS env var):
   python3 scripts/batch_gen_songs.py "歌1|歌2|歌3|..."
-  # default: reads all subdirs of /tmp/jingze_music/
+  # default (no arg): reads all subdirs of /tmp/jingze_music/
 
 Lessons baked in (2026-06-06):
   - requests + 7890 proxy (NOT curl, sandbox filters Authorization header)
@@ -12,6 +12,7 @@ Lessons baked in (2026-06-06):
   - Skip cached: mp3 exists + size > 1MB
   - python3 -u when run in background (avoid stdout buffer deadlock)
   - Sequential (NOT parallel — MiniMax rate limit)
+  - ⚠️ pitfall #25: Only reads sys.argv[1], NOT SONGS env var. Empty env var = run all 20 songs
 """
 import os, sys, time, json
 import requests

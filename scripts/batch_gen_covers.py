@@ -4,20 +4,23 @@
 For each subdir, reads cover_spec.json if exists, else uses defaults.
 Saves: cover.png / cover.jpg / cover_jpeg.jpg (3 formats).
 
-cover_spec.json schema:
+cover_spec.json schema (⚠️ pitfall #26: ALL 4 fields required):
   {
-    "name": "玻璃心",
-    "prompt": "AGNES prompt (NO text/Chinese in prompt)",
-    "title": "玻璃心",
-    "subtitle": "玻璃心 也敢透光",
+    "name": "半壶纱_Z",
+    "prompt": "AGNES底图prompt (NO text/Chinese in prompt)",
+    "title": "半壶纱",
+    "subtitle": "半句古诗 半晌假",
     "brand": "京择说",
     "byline": "Music by 京择"
   }
 
+⚠️ pitfall #24: 字段名是 `prompt`（不是 `agines_prompt`），写错 AGNES KeyError FATAL
+⚠️ pitfall #26: title/subtitle/brand/byline 4 字段全要，缺一 PIL KeyError FATAL
+
 Lessons baked in (2026-06-06):
   - 1536x1536 (NOT 1920, AGNES HTTP 500)
   - AGNES prompt NO text/writing/Chinese characters
-  - AGNES Google Cloud Storage SSL EOF → 3x retry
+  - AGNES Google Cloud Storage SSL EOF → 3x retry + sleep 5s (pitfall #23)
   - PIL title font size adapts to title length (3/4/5/6+ chars)
   - Bottom-right byline MUST use W-320 (avoid edge crop)
   - PIL bottom gradient + shadow text for readability
@@ -62,6 +65,8 @@ def title_font_size(title_len):
 # --- 3. Discover specs ---
 specs = []
 default_dirs = sorted(os.listdir(BASE_DIR)) if len(sys.argv) < 2 else sys.argv[1].split("|")
+# ⚠️ pitfall #26: 4 字段预校验 (title/subtitle/brand/byline) + pitfall #24 (字段名 prompt 不是 agines_prompt)
+required_fields = ["prompt", "title", "subtitle", "brand", "byline"]
 for d in default_dirs:
     spec_path = os.path.join(BASE_DIR, d, "cover_spec.json")
     if not os.path.isdir(os.path.join(BASE_DIR, d)):
@@ -69,7 +74,12 @@ for d in default_dirs:
     if not os.path.exists(spec_path):
         print(f"[SKIP] {d}: no cover_spec.json")
         continue
-    specs.append((d, json.load(open(spec_path))))
+    spec = json.load(open(spec_path))
+    missing = [f for f in required_fields if f not in spec]
+    if missing:
+        print(f"[SKIP] {d}: missing required fields: {missing}")
+        continue
+    specs.append((d, spec))
 print(f"[COVERS] {len(specs)} specs found")
 
 # --- 4. For each: AGNES + PIL ---
@@ -126,13 +136,13 @@ for name, spec in specs:
                     except requests.exceptions.SSLError as e:
                         print(f"  download SSL EOF attempt {d_attempt+1}: {e}")
                         if d_attempt < 2:
-                            time.sleep(3)
+                            time.sleep(5)  # pitfall #23: sleep 3s → 5s
                 if success:
                     break
             except Exception as e:
                 print(f"  AGNES exception attempt {attempt+1}: {e}")
                 if attempt < 2:
-                    time.sleep(3)
+                    time.sleep(5)  # pitfall #23: sleep 3s → 5s
         if not success:
             print(f"  FATAL: {name} AGNES failed after 3 attempts, skipping")
             continue

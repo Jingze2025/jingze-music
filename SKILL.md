@@ -1,9 +1,11 @@
 ---
 name: jingze-music-pipeline
-description: "Use when the user wants to make a music track inspired by current chart hits — pulls 网易云/QQ/酷狗 top charts, picks a song to mirror, writes original Chinese indie lyrics, generates the audio via MiniMax Music-2.6, and produces a 1:1 cover (PNG/JPG/JPEG, ≥1440×1440, ≤10MB) via AGNES + PIL. End-to-end: 3 deliverables (cover, lyrics, MP3). Triggers: '做首歌', '按热度榜做歌', 'mirror 爆款', '1:1 对标', '京择式音乐', 'jingze music pipeline'."
-version: 1.1.0
+description: "Use when the user wants to make a music track inspired by current chart hits — pulls 网易云/QQ/酷狗 top charts (流行 + 国风双榜), picks a song to mirror, writes original Chinese indie lyrics (含国风戏腔/古风禅意风格), generates the audio via MiniMax Music-2.6-free, and produces a 1:1 cover (PNG/JPG/JPEG, ≥1440×1440, ≤10MB) via AGNES + PIL. End-to-end: 3 deliverables (cover, lyrics, MP3) + 飞书表 12 入库. Triggers: '做首歌', '按热度榜做歌', 'mirror 爆款', '1:1 对标', '国风对标', '京择式音乐', 'jingze music pipeline'."
+version: 1.3.0
 author: 京择 (Hermes Agent 协作)
 changelog:
+  - 1.3.0 (2026-06-06): 国风首批 5 首对标验证 + pitfall #22-26 + guofeng-style-anatomy.md + 飞书附件上传正确路径固化（lark-cli --as bot +record-upload-attachment）
+  - 1.2.0 (2026-06-06): pitfalls 22-23 3500 截断公式 + AGNES retry sleep 3s→5s + scene-differentiation-matrix.md 加 F 国风古韵
   - 1.1.0 (2026-06-06): 加 5 大趋势钩子矩阵 + AGNES SSL EOF 重试 + 动态字体规则 + 批量生脚本模板（5 首歌一次跑完验证）
   - 1.0.0 (2026-06-05): 初始版（5 步流程 + 12 踩坑）
 license: MIT
@@ -272,6 +274,43 @@ send_message(
 
 19. **歌词字符数限制**（MiniMax 实测）：**单首 ≤ 3500 字符安全**。这次 4 首歌最长的"活着"= 2162 字符 ≈ 安全边际 60%。**别越界到 4000+**（被截断会丢 bridge/outro）。
 
+20. **歌曲作品不 commit 到 GitHub**（2026-06-06 用户明确要求）— skill repo 只存**流程框架**（SKILL.md + scripts + references），**所有 mp3 / png / lyrics 产物只留在本地 `/tmp/jingze_music/` + 飞书多维表格**。`.gitignore` 已写 `*.mp3` / `*.png` / `*.jpg` / `/tmp/jingze_music/` 排除。
+
+21. **飞书多维表格 = 歌曲归档标准**（2026-06-06 新规）— 每首歌一行，字段：
+    - 歌名 / 趋势 / 钩子 / 模板 / 创作日期 / 状态
+    - 封面图（飞书原生图片 attachment）
+    - MP3（飞书原生音频 attachment）
+    - 完整歌词（多行文本）
+    - AGNES prompt + MiniMax prompt
+    - 备注（设计思路 / 数据指标）
+    用 `lark-bitable` skill 操作（行创建 + 字段填充 + 多媒体上传）。
+
+22. **MiniMax 歌词截断公式（3500 字符安全边际）**（2026-06-06 第 3 波实战验证）：
+    - 安全阈值：**≤ 3500 字符**（不是硬限，但 ≥ 4000 会被截断丢 bridge/outro）
+    - 截断优先级：**保留 hook + chorus + bridge**（删除重复 verse + 重复 pre-chorus）
+    - 实测 5 首歌最大 3,357 字符（5-6 段完整结构），最远 3,490 字符（5 段 + 1 段半）
+    - **不要**只保留副歌删 bridge —— 没有 bridge 的歌单调且缺反转
+
+23. **AGNES 代理 retry sleep 3s → 5s**（2026-06-06 实战验证）：原 v1.1.0 写 3s，5 首歌批量生时**第一次 retry 失败第二次成功**（v1.2.0 验证）。**v1.3.0 改为 5s**（代理瞬断窗口期更稳）。
+
+24. **`cover_spec.json` 字段名是 `prompt`，不是 `agines_prompt`**（2026-06-06 国风首批踩坑）：AGNES `KeyError: 'prompt'` 3 次重试都 FATAL。**所有 5 个 spec 文件必须用 `prompt` 字段**。错一个字 FATAL 全废。
+
+25. **`batch_gen_songs.py` 不读 SONGS env var**（2026-06-06 实战验证）：v1.1.0 写的脚本只读 `sys.argv[1]`。空 SONGS env → 退化为扫描 `/tmp/jingze_music/` 所有子目录 → **意外跑全 20 首歌**。**必须 CLI 参数**：`python3 scripts/batch_gen_songs.py "歌1|歌2|..."`。
+
+26. **`cover_spec.json` 必须含 4 字段**（2026-06-06 实战验证）：`title` / `subtitle` / `brand` / `byline` 全字符串。**缺任一字段 → PIL KeyError FATAL**（半壶纱_Z 第一版就栽在这里：写了 `text_lines` 不是 `title`）。实测完整 4 字段后才出图。
+
+27. **飞书附件上传正确路径**（2026-06-06 国风首批踩坑）：**用 lark-cli 不要直接调 OpenAPI**：
+    - ❌ `drive/v1/medias/upload_all` 报 `code 1061001 unknown error`
+    - ❌ `im/v1/files` 需要 chat_id / message_id，单独调不工作
+    - ✅ `lark-cli --as bot base +record-upload-attachment --file <相对路径>`（**必须先 `cd` 到文件目录 + 用相对路径**）
+    - **必须显式传** `--as bot` / `--base-token` / `--table-id` / `--field-id` / `--record-id`（不读上下文绑定）
+    - **环境变量**：`LARK_CLI_NO_PROXY=1` + `os.environ.copy()` 继承 Keychain 上下文
+
+28. **研究报告/抓榜/分析类不入作品库**（2026-06-06 用户纠错）：用户原话"你怎么传到飞书了，我们飞书的多维表格是用来记录音乐作品的啊"。**飞书表 12 = 仅做音乐作品库**。研究报告/榜单分析/抓榜数据/调研草稿一律：
+    - 走 `~/Documents/hermes-workspace/notes/` 写 .md 文件
+    - 或 `send_message` 发飞书对话 + `MEDIA:` 附件
+    - **绝不批量入库**到表 12（防污染 + 防占用行号）
+
 ## Verification Checklist
 
 **Pre-flight**:
@@ -336,21 +375,30 @@ cd /tmp/jingze_music && python3 -u /path/to/skill/scripts/batch_gen_covers.py
 - `references/agnes-cover-prompts.md` — 5 个验证过的封面 prompt（静物/雨天/咖啡/城市/人物剪影）+ 各自成功的尺寸
 - `references/lyrics-templates.md` — 6 种结构模板（demo 直发/半念半唱/古风/民谣/电音/纯音乐）
 - `references/hook-formulas.md` — **5 大钩子矩阵**（2026-06-06 第二波 4 首歌验证，4 大公式 5 大反例 5 个副歌上扬动作 3 个 bridge 反转套路）
+- `references/scene-differentiation-matrix.md` — **5+1 大场景差异化矩阵**（A 物理空间治愈 / B 数字断舍离 / C 时间轻盈 / D 关系仪式 / E 食物慰藉 + **F 国风古韵**），30+ 子场景清单
+- `references/guofeng-style-anatomy.md` — **国风 5 大流派解剖**（2026-06-06 国风榜 Top 20 真实数据分析 + 对标 prompt 模板 + 戏腔/禅意/国潮/民谣/京剧戏腔 5 大流派特征 + 5 条对标建议）
 
 ## cover_spec.json Schema
 
-`batch_gen_covers.py` 读取每首歌下的 `cover_spec.json`：
+`batch_gen_covers.py` 读取每首歌下的 `cover_spec.json`（**v1.3.0 4 字段全要，pitfall #26**）：
 
 ```json
 {
-  "name": "玻璃心",
-  "prompt": "AGNES prompt (NO text/Chinese in prompt, 1536x1536 only)",
-  "title": "玻璃心",
-  "subtitle": "玻璃心 也敢透光",
+  "name": "半壶纱_Z",
+  "prompt": "AGNES底图prompt (NO text/Chinese in prompt, 1536x1536 only)",
+  "title": "半壶纱",
+  "subtitle": "半句古诗 半晌假",
   "brand": "京择说",
   "byline": "Music by 京择"
 }
 ```
+
+**关键字段说明**：
+- `prompt` (旧版叫 `agines_prompt` 是错的，pitfall #24) — AGNES 底图 prompt
+- `title` — 主标题（PIL 大字）
+- `subtitle` — 副标题（PIL 小字）
+- `brand` — 品牌名（右上角，PIL 中字）
+- `byline` — 署名（右下角，PIL 小字）
 
 **未填此文件时，batch_gen_covers.py 跳过该歌曲**（不让 PIL 强行 fallback 到默认名，**避免误生成**）。
 
